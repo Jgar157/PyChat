@@ -9,6 +9,7 @@ import re
 PACKET_SIZE = 1024
 LOCAL_IP = "127.0.0.1"
 READER_FLAG = False
+VALID_SELF_PORT = False
 
 
 def file_exists(file_name: str) -> bool:
@@ -18,9 +19,11 @@ def file_exists(file_name: str) -> bool:
 def upload(sock, file_name):
     if file_exists(file_name):
 
+        # Send file status over
+        sock.send("200".encode())
+
         # Send file size over
         file_size = os.path.getsize(file_name)
-        print(file_size)
         sock.send(file_size.to_bytes(PACKET_SIZE, byteorder="big"))
 
         # Begin transmitting file over
@@ -44,7 +47,6 @@ def upload(sock, file_name):
 
 
 def download(sock, file_name):
-
     file_status = sock.recv(PACKET_SIZE).decode()
 
     if file_status != "404":
@@ -54,11 +56,12 @@ def download(sock, file_name):
 
         # Receive file size from client
         file_size = sock.recv(PACKET_SIZE)
-        remaining_bytes = int.from_bytes(file_size, byteorder='big', signed=False)
+        remaining_bytes = int.from_bytes(file_size, byteorder='big')
         print("File size:", remaining_bytes)
 
         # Open new file and begin writing
         # wb: write bytes
+        time.sleep(1)
         with open(file_name, 'wb') as target_file:
             # Use c to track loops, print remaining_bytes every 100 loops
             while remaining_bytes > 0:
@@ -74,29 +77,38 @@ def download(sock, file_name):
 
 
 def writer(ip_address):
+    VALID_TARGET_PORT = False  # Ensure that the target port is an integer
+
     # Wait until Reader is done choosing a port to pick the target port
     while not READER_FLAG:
         time.sleep(1)
 
-    port = int(input("Please enter target user port number: "))
+    while not VALID_TARGET_PORT:
+        try:
+            port = int(input("Please enter target user port number: "))
+            VALID_TARGET_PORT = True
+        except:
+            print("Invalid port, please try again.")
+
     # Create the writer socket
     writer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # 10 Attempts to connect
-    for tries in range(10):
+    for tries in range(5):
         try:
             writer.connect((ip_address, port))
-        except:
-            time.sleep(1)
-        finally:
+            print(ip_address, port)
             print("Connected on port:", port)
             writer.send(user_name.encode())
             break
+        except:
+            time.sleep(2)
+
 
     # Writing loop
     user_chat = ""
     while user_chat != "exit":
-        user_chat = input(f"{user_name}:",)
+        user_chat = input()
 
         # Check if Transferring file, upload if True
         writer.send(user_chat.encode())
@@ -114,21 +126,24 @@ ip_address = LOCAL_IP
 # Prepare the thread
 writer_thread = threading.Thread(target=writer, args=(ip_address,))
 
-# Begin the Thread! :)
-writer_thread.start()
-
 # Convert main thread to Reading Thread
 # Create the socket
 reader = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 reader.settimeout(300)
-try:
-    port = int(input("Please enter your own port: "))
-    reader.bind((LOCAL_IP, port))
-    READER_FLAG = True
-except:
-    print("Not binded")
 
-reader.listen(1)
+while not VALID_SELF_PORT:
+    try:
+        port = int(input("Please enter your own port: "))
+        reader.bind((LOCAL_IP, port))
+        READER_FLAG = True
+        reader.listen(1)
+        VALID_SELF_PORT = True
+    except Exception as e:
+        print("Invalid port, please try again.")
+
+# Begin the writing Thread! :)
+writer_thread.start()
+
 (reader, addr) = reader.accept()
 chatter_user_name = reader.recv(PACKET_SIZE).decode()
 
@@ -136,16 +151,24 @@ received_text = ""
 while received_text != "exit":
     received_text = reader.recv(PACKET_SIZE).decode()
 
+    if len(received_text) >= 4:  # Check if exiting
+        command = received_text[:4].upper()
+        # Begin exiting the system
+        if command == "EXIT":
+            print(f"{chatter_user_name} has exited the chat.")
+            sys.exit(0)
+
     # Check if Transferring file, upload if True
     if len(received_text) >= 10:
         command = received_text[:8].upper()
         file_name = received_text[9:]
 
+        print(f"{chatter_user_name}: {received_text}")
+
         if command == "TRANSFER":
-            print("Beginning Download")
+            # print("Beginning Download")
             download(reader, file_name)
-            print("Ending Download")
-        else:
-            print(f"{chatter_user_name}: {received_text}")
+            # print("Ending Download")
+
     else:
         print(f"{chatter_user_name}: {received_text}")
