@@ -39,8 +39,6 @@ def upload(sock, file_name):
                 remaining_bytes -= next_size
             source_file.flush()
 
-        print("Finished writing all bytes")
-
     else:
         sock.send("404".encode())
         print("File name does not exist in local directory, please try again.")
@@ -57,7 +55,7 @@ def download(sock, file_name):
         # Receive file size from client
         file_size = sock.recv(PACKET_SIZE)
         remaining_bytes = int.from_bytes(file_size, byteorder='big')
-        print("File size:", remaining_bytes)
+        # print("File size:", remaining_bytes)
 
         # Open new file and begin writing
         # wb: write bytes
